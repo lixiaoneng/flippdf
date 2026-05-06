@@ -6,8 +6,8 @@ import './App.css'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker
 
-const BOOK_URL = '/book/book.pdf'
-const COVER_URL = '/book/cover.jpg'
+const BOOK_URL = `${import.meta.env.BASE_URL}book/book.pdf`
+const COVER_URL = `${import.meta.env.BASE_URL}book/cover.jpg`
 const DEFAULT_TITLE = '绘本展示版'
 const TURN_DURATION = 500
 
