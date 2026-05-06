@@ -9,7 +9,7 @@
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
-  touch-action: pan-y;
+  touch-action: pan-y pinch-zoom;
 }
 
 .reader-topbar {
@@ -482,13 +482,44 @@
   }
 }
 
-@media (orientation: landscape) and (max-height: 540px) {
+@media (orientation: landscape) and (max-height: 600px) {
+  .reader-shell {
+    grid-template-rows: 42px minmax(0, 1fr) 18px;
+  }
+
   .reader-topbar {
-    height: 50px;
+    height: 42px;
+    padding-inline: 12px;
+    gap: 8px;
+  }
+
+  .brand-title {
+    font-size: 13px;
+  }
+
+  .reader-meta {
+    min-width: 58px;
+    padding: 6px 9px;
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.58);
+  }
+
+  .icon-button {
+    width: 34px;
+    height: 34px;
   }
 
   .reader-stage {
-    padding-block: 4px;
+    padding: 2px 44px 4px;
+  }
+
+  .book-stage {
+    min-height: 0;
+  }
+
+  .spread-static,
+  .cover-image {
+    border-radius: 8px;
   }
 
   .cover-panel {
@@ -513,6 +544,71 @@
   }
 
   .reader-footer {
-    padding-bottom: 8px;
+    padding: 0 12px 4px;
+    font-size: 10px;
+    line-height: 1.2;
+  }
+
+  .page-button {
+    width: 36px;
+    height: 36px;
+    background: rgba(255, 255, 255, 0.42);
+    box-shadow: 0 12px 30px rgba(79, 68, 50, 0.08);
+  }
+
+  .page-button--prev {
+    left: 6px;
+  }
+
+  .page-button--next {
+    right: 6px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 600px) {
+  :fullscreen .reader-shell {
+    grid-template-rows: 0 minmax(0, 1fr) 0;
+  }
+
+  :fullscreen .reader-topbar {
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    z-index: 8;
+    width: auto;
+    height: 34px;
+    padding: 0;
+    display: flex;
+    transform: translateX(-50%);
+    backdrop-filter: none;
+  }
+
+  :fullscreen .brand-title,
+  :fullscreen .reader-footer {
+    display: none;
+  }
+
+  :fullscreen .reader-meta {
+    min-width: 62px;
+    background: rgba(255, 255, 255, 0.52);
+    box-shadow: 0 10px 24px rgba(52, 43, 31, 0.08);
+  }
+
+  :fullscreen .icon-button {
+    width: 34px;
+    height: 34px;
+    background: rgba(255, 255, 255, 0.42);
+  }
+
+  :fullscreen .reader-stage {
+    padding: 0 40px;
+  }
+
+  :fullscreen .page-button {
+    opacity: 0.72;
+  }
+
+  :fullscreen .page-button:not(:disabled):hover {
+    opacity: 1;
   }
 }

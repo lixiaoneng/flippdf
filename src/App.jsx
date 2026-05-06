@@ -323,6 +323,11 @@ function App() {
   }
 
   const handleTouchStart = (event) => {
+    if (event.touches.length !== 1) {
+      touchStartRef.current = null
+      return
+    }
+
     const touch = event.changedTouches[0]
     touchStartRef.current = {
       x: touch.clientX,
@@ -332,7 +337,7 @@ function App() {
 
   const handleTouchEnd = (event) => {
     const start = touchStartRef.current
-    if (!start || isTurning) return
+    if (!start || isTurning || event.touches.length > 0) return
 
     const touch = event.changedTouches[0]
     const deltaX = touch.clientX - start.x
