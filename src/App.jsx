@@ -10,10 +10,23 @@ const BOOK_URL = `${import.meta.env.BASE_URL}book/book.pdf`
 const COVER_URL = `${import.meta.env.BASE_URL}book/cover.jpg`
 const DEFAULT_TITLE = '绘本展示版'
 const TURN_DURATION = 500
+const MAX_RENDER_SCALE = 4
 
 function getDisplayTitle() {
   const params = new URLSearchParams(window.location.search)
   return params.get('title')?.trim() || DEFAULT_TITLE
+}
+
+function getRenderScale() {
+  const dpr = window.devicePixelRatio || 1
+  const isMobile = window.matchMedia('(max-width: 820px), (pointer: coarse)').matches
+  const mobileScale = Math.max(dpr, 3)
+  const desktopScale = Math.max(dpr, 2)
+  return Math.min(isMobile ? mobileScale : desktopScale, MAX_RENDER_SCALE)
+}
+
+function isPinchZoomed() {
+  return Boolean(window.visualViewport && window.visualViewport.scale > 1.03)
 }
 
 function App() {
@@ -21,6 +34,7 @@ function App() {
   const pageWrapRef = useRef(null)
   const renderTaskRef = useRef(null)
   const touchStartRef = useRef(null)
+  const multiTouchRef = useRef(false)
   const turnTimerRef = useRef(null)
 
   const [title] = useState(getDisplayTitle)
@@ -32,11 +46,13 @@ function App() {
   const [error, setError] = useState('')
   const [hasCover, setHasCover] = useState(false)
   const [showCover, setShowCover] = useState(false)
-  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isNativeFullscreen, setIsNativeFullscreen] = useState(false)
+  const [isImmersive, setIsImmersive] = useState(false)
   const [isTurning, setIsTurning] = useState(false)
   const [currentSpreadImage, setCurrentSpreadImage] = useState(null)
   const [flipAnimation, setFlipAnimation] = useState(null)
 
+  const isFullscreen = isNativeFullscreen || isImmersive
   const isCoverVisible = hasCover && showCover
   const canGoPrev = !isCoverVisible && !isTurning && pageNumber > 1
   const canGoNext = !isCoverVisible && !isTurning && pageNumber < totalPages
@@ -93,7 +109,7 @@ function App() {
     const container = pageWrapRef.current
     return {
       height: Math.max((container?.clientHeight || window.innerHeight) - 4, 260),
-      pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+      renderScale: getRenderScale(),
       width: Math.max((container?.clientWidth || window.innerWidth) - 4, 280),
     }
   }, [])
@@ -116,7 +132,7 @@ function App() {
           bounds.width / baseViewport.width,
           bounds.height / baseViewport.height,
         )
-        const viewport = page.getViewport({ scale: fitScale * bounds.pixelRatio })
+        const viewport = page.getViewport({ scale: fitScale * bounds.renderScale })
 
         canvas.width = Math.floor(viewport.width)
         canvas.height = Math.floor(viewport.height)
@@ -126,9 +142,9 @@ function App() {
         await task.promise
 
         return {
-          height: Math.floor(viewport.height / bounds.pixelRatio),
+          height: Math.floor(viewport.height / bounds.renderScale),
           src: canvas.toDataURL('image/jpeg', 0.94),
-          width: Math.floor(viewport.width / bounds.pixelRatio),
+          width: Math.floor(viewport.width / bounds.renderScale),
         }
       } catch (renderError) {
         if (renderError?.name !== 'RenderingCancelledException') {
@@ -173,6 +189,46 @@ function App() {
     const frame = window.requestAnimationFrame(() => renderPage())
     return () => window.cancelAnimationFrame(frame)
   }, [renderPage])
+
+  useEffect(() => {
+    if (!pdfDoc || isCoverVisible || isTurning || !currentSpreadImage) {
+      return undefined
+    }
+
+    let cancelled = false
+    const preloadTimer = window.setTimeout(() => {
+      const nearbyPages = [pageNumber - 1, pageNumber + 1].filter(
+        (page) => page >= 1 && page <= totalPages,
+      )
+
+      nearbyPages.forEach((page) => {
+        getPageImage(page)
+      })
+
+      for (const cachedPage of pageCacheRef.current.keys()) {
+        if (
+          !cancelled &&
+          cachedPage !== pageNumber &&
+          !nearbyPages.includes(cachedPage)
+        ) {
+          pageCacheRef.current.delete(cachedPage)
+        }
+      }
+    }, 120)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(preloadTimer)
+    }
+  }, [
+    currentSpreadImage,
+    getPageImage,
+    isCoverVisible,
+    isTurning,
+    pageNumber,
+    pdfDoc,
+    totalPages,
+  ])
 
   useEffect(() => {
     if (!pdfDoc || isCoverVisible) return undefined
@@ -296,7 +352,8 @@ function App() {
 
   useEffect(() => {
     const onFullscreenChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement))
+      setIsNativeFullscreen(Boolean(document.fullscreenElement))
+      if (document.fullscreenElement) setIsImmersive(false)
       window.setTimeout(renderPage, 80)
     }
 
@@ -315,15 +372,34 @@ function App() {
   }, [])
 
   const toggleFullscreen = async () => {
-    if (!document.fullscreenElement) {
-      await document.documentElement.requestFullscreen?.()
-    } else {
+    if (document.fullscreenElement) {
       await document.exitFullscreen?.()
+      return
+    }
+
+    if (isImmersive) {
+      setIsImmersive(false)
+      window.setTimeout(renderPage, 80)
+      return
+    }
+
+    try {
+      if (document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen()
+      } else {
+        setIsImmersive(true)
+        window.setTimeout(renderPage, 80)
+      }
+    } catch {
+      setIsImmersive(true)
+      window.setTimeout(renderPage, 80)
     }
   }
 
   const handleTouchStart = (event) => {
-    if (event.touches.length !== 1) {
+    multiTouchRef.current = event.touches.length > 1
+
+    if (event.touches.length !== 1 || isPinchZoomed()) {
       touchStartRef.current = null
       return
     }
@@ -337,12 +413,22 @@ function App() {
 
   const handleTouchEnd = (event) => {
     const start = touchStartRef.current
-    if (!start || isTurning || event.touches.length > 0) return
+    if (
+      !start ||
+      isTurning ||
+      multiTouchRef.current ||
+      event.touches.length > 0 ||
+      isPinchZoomed()
+    ) {
+      multiTouchRef.current = event.touches.length > 1
+      return
+    }
 
     const touch = event.changedTouches[0]
     const deltaX = touch.clientX - start.x
     const deltaY = touch.clientY - start.y
     touchStartRef.current = null
+    multiTouchRef.current = false
 
     if (Math.abs(deltaX) < 46 || Math.abs(deltaX) < Math.abs(deltaY) * 1.35) return
     if (deltaX < 0) {
@@ -355,7 +441,7 @@ function App() {
 
   return (
     <main
-      className="reader-shell"
+      className={`reader-shell ${isImmersive ? 'reader-shell--immersive' : ''}`}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
